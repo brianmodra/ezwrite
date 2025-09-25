@@ -1,20 +1,23 @@
 import tkinter as tk
-from typing import override, List
 from argparse import ArgumentTypeError
-from ezwrite.ui.paragraph import ParagraphContainer, Paragraph
-from ezwrite.ui.tok import AbstractToken
-from ezwrite.graph.ezentity import Entity, EzEntity
-from ezwrite.utils.lock import Lock
-from ezwrite.graph.ezproperty import EzProperty
+from typing import List, override
+
 from rdflib.graph import Graph
 from rdflib.term import URIRef
 
-class Chapter(ParagraphContainer):
+from ezwrite.graph.ezentity import Entity
+from ezwrite.graph.ezproperty import EzProperty
+from ezwrite.ui.paragraph import Paragraph, ParagraphContainer
+from ezwrite.ui.tok import AbstractToken
+from ezwrite.utils.lock import Lock
+
+
+class Chapter(ParagraphContainer, tk.Canvas):
     """The entire canvas of the editor is (at one point in time) a chapter of the book.
     It contains the paragraphs, and the canvas is scrollable."""
     def __init__(self, frame: tk.Frame, graph: Graph):
         tk.Canvas.__init__(self, frame, bg="white", cursor="arrow")
-        EzEntity.__init__(self, graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Chapter"))
+        super().__init__(graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Chapter"))
         self._lock: Lock = Lock()
         self._laying_out: bool = True
         self._frame = frame
@@ -23,6 +26,11 @@ class Chapter(ParagraphContainer):
         self.bind_all('<KeyPress>', self._handle_key_press)
         self._laying_out = False
         self._graph = graph
+
+    @property
+    @override
+    def canvas(self) -> tk.Canvas:
+        return self
 
     @property
     def graph(self) -> Graph:

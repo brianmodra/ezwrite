@@ -1,16 +1,31 @@
 import tkinter as tk
+from abc import ABC, abstractmethod
 from argparse import ArgumentTypeError
 from typing import List, override
-from ezwrite.ui.tok import Tok, TokenContainer, AbstractToken, EzwriteContainer
-from ezwrite.graph.ezentity import Entity, EzEntity
-from abc import ABC, abstractmethod
-from ezwrite.ui.position import Position
-from ezwrite.graph.ezproperty import EzProperty
-from rdflib.term import URIRef
+
 from rdflib.graph import Graph
+from rdflib.term import URIRef
+
+from ezwrite.graph.ezentity import Entity
+from ezwrite.graph.ezproperty import EzProperty
+from ezwrite.ui.position import Position
+from ezwrite.ui.tok import AbstractToken, EzwriteContainer, Tok, TokenContainer
+
 
 class SentenceContainer(EzwriteContainer, tk.Frame, ABC):
     """Just needed to avoid circular dependencies"""
+    def __init__(self, canvas: tk.Canvas, graph: Graph, subject: URIRef):
+        super().__init__(graph, subject)
+        tk.Frame.__init__(self, canvas,
+                      bg="light grey",
+                      bd=0,
+                      height=80,
+                      padx=0,
+                      pady=0,
+                      borderwidth=0,
+                      relief="flat",
+                      cursor="ibeam")
+
     @property
     @abstractmethod
     def graph(self) -> Graph:
@@ -24,7 +39,7 @@ class SentenceContainer(EzwriteContainer, tk.Frame, ABC):
 class Sentence(TokenContainer):
     """A sentence is not a UI element, it is just a collection of tokens."""
     def __init__(self, paragraph: SentenceContainer):
-        EzEntity.__init__(self, self.graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Sentence"))
+        super().__init__(self.graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Sentence"))
         self._paragraph = paragraph
         paragraph.add_child_entity(self)
 
@@ -72,6 +87,5 @@ class Sentence(TokenContainer):
             if not isinstance(ent, Tok): raise ArgumentTypeError("children need to be instances of Token")
             token: Tok = ent
             tok_height: int = token.height
-            if tok_height > height:
-                height = tok_height
+            height = max(height, tok_height)
         return height

@@ -1,18 +1,21 @@
 import tkinter as tk
 import tkinter.font
-from typing import List, override
 from abc import ABC, abstractmethod
-from ezwrite.ui.position import Position
-from ezwrite.graph.ezentity import Entity, EzEntity
-from rdflib.term import URIRef
 from argparse import ArgumentTypeError
+from typing import List, override
 
-"""A Tok is a token (could not use the name 'Token' - already in use)
-It is the smallest entity in the knowledge graph to describe the text.
-It could be a word, punctuation, whitespace, or the end of a word, e.g.
-In the word: Dave's, we'd have two tokens: Dave, and 's"""
+from rdflib.graph import Graph
+from rdflib.term import URIRef
 
-class AbstractToken(EzEntity, tk.Canvas, ABC):
+from ezwrite.graph.ezentity import Entity, EzEntity
+from ezwrite.ui.position import Position
+
+
+class AbstractToken(EzEntity, ABC):
+    """This provides an interface to manipulate a token, without specifying
+    the actual implemetation of the token"""
+    def __init__(self, graph: Graph):
+        super().__init__(graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Token"))
     @abstractmethod
     def remove_cursor(self) -> None:
         pass
@@ -21,19 +24,36 @@ class AbstractToken(EzEntity, tk.Canvas, ABC):
     def place_cursor(self, pos: Position) -> None:
         pass
 
+
 class EzwriteContainer(EzEntity, ABC):
+    """A generic container interface for all objects in the UI that contain others,
+    for example, sentence, paragraph, and chapter."""
+    def __init__(self, graph: Graph, subject: URIRef):
+        super().__init__(graph, subject)
+
     @abstractmethod
     def remove_cursor_except(self, tok: AbstractToken) -> None:
         pass
 
+
 class TokenContainer(EzwriteContainer, ABC):
-    """needed to avoid circular dependencies"""
+    """This is more specifically an abstractrion of a sentence"""
+    def __init__(self, graph: Graph, subject: URIRef):
+        super().__init__(graph, subject)
+
     @abstractmethod
     def layout(self, pos: Position, frame_width: int) -> int:
         pass
 
-class Tok(AbstractToken):
-    """A token is a word or single punctuation character. It is modeled as a Label."""
+
+class Tok(AbstractToken, tk.Canvas):
+    """A Tok is a token (could not use the name 'Token' - already in use)
+    It is the smallest entity in the knowledge graph to describe the text.
+    It could be a word, punctuation, whitespace, or the end of a word, e.g.
+    In the word: Dave's, we'd have two tokens: Dave, and 's
+
+    A token is a word or single punctuation character. It is modeled as a Label."""
+
     cursor_colours: List[str] = ["purple","gold"]
     cursor_index: int = 0
     @classmethod
@@ -46,18 +66,17 @@ class Tok(AbstractToken):
         if font is None:
             font = tkinter.font.Font(name="TkDefaultFont", exists=True)
         self._font = font
-        if sentence.parent is None: raise ArgumentTypeError("The sentence (of a Tok) must not be None")
-        if not isinstance(sentence.parent, tk.Frame): raise ArgumentTypeError("The sentence (of a Tok) must inherit from Frame")
+        if sentence.parent is None: raise ArgumentTypeError("The sentence must not be None")
+        if not isinstance(sentence.parent, tk.Frame): raise ArgumentTypeError("The sentence must inherit from Frame")
         frame: tk.Frame = sentence.parent
         tk.Canvas.__init__(self, frame,
                          borderwidth=0,
                          bd=0,
                          highlightthickness=0,
                          relief="flat")
-        EzEntity.__init__(self, sentence.graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Token"))
+        super().__init__(sentence.graph)
         width = font.measure(word)
-        if width < 2:
-            width = 2 # for carriage return etc, need space to display the cursor
+        width = max(width, 2) # for carriage return etc, need space to display the cursor
         height = font.metrics()['linespace']
         self._cursor_pos = Position(-5, 0)
         self._cursor_height: int = height
@@ -79,14 +98,14 @@ class Tok(AbstractToken):
         self.pack()
         self._sentence: TokenContainer = sentence
         self.bind('<Button-1>', self._handle_mouse_button_1)
-        self.bind('<Left>', self._move_left)
-        self.bind('<Right>', self._move_right)
-        self.bind('<Up>', self._move_up)
-        self.bind('<Down>', self._move_down)
+        self.bind('<Left>', self.move_left)
+        self.bind('<Right>', self.move_right)
+        self.bind('<Up>', self.move_up)
+        self.bind('<Down>', self.move_down)
         sentence.add_child_entity(self)
 
     def _handle_mouse_button_1(self, event: tk.Event) -> None:
-        self._place_cursor_x(event.x)
+        self.place_cursor_x(event.x)
 
     def remove_cursor_everywhere_except_this(self) -> None:
         parent: EzwriteContainer | None = None
@@ -100,73 +119,66 @@ class Tok(AbstractToken):
         if parent is not None:
             parent.remove_cursor_except(self)
 
-    def _place_cursor_x(self, event_x: int) -> None:
+    def place_cursor_at_word_index_and_x_position(self, word_index: int, x: int):
+        self._cursor_word_index = word_index
+        self.place_cursor(Position(x + 1 if word_index == 0 else x, 0))
+        self.remove_cursor_everywhere_except_this()
+
+    def set_cursor_word_index(self, word_index: int):
+        self._cursor_word_index = word_index
+
+    def place_cursor_x(self, event_x: int) -> None:
         closest_x: int = 0
         closest_distance: int | None = None
-        self._cursor_word_index = 0
+        word_index: int = 0
         for i in range(len(self._word) + 1):
             x_after_substring = 0 if i == 0 else self._font.measure(self._word[0:i])
             distance = abs(event_x - x_after_substring)
             if closest_distance is None or distance < closest_distance:
                 closest_x = x_after_substring
-                self._cursor_word_index = i
+                word_index = i
             else:
                 break
             closest_distance = distance
-        if self._cursor_word_index == len(self._word):
+        if word_index == len(self._word):
             next_entity = self.next_peer()
             if next_entity is None:
                 closest_x -= 2
             else:
                 if not isinstance(next_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
                 next_tok: Tok = next_entity
-                next_tok._cursor_word_index = 0
-                next_tok.place_cursor(Position(1, 0))
-                next_tok.remove_cursor_everywhere_except_this()
+                next_tok.place_cursor_at_word_index_and_x_position(0, 0)
                 return
-        if self._cursor_word_index == 0:
-            self.place_cursor(Position(closest_x + 1, 0))
-        else:
-            self.place_cursor(Position(closest_x, 0))
-        self.remove_cursor_everywhere_except_this()
+        self.place_cursor_at_word_index_and_x_position(word_index, closest_x)
 
-    def _move_left(self, event: tk.Event) -> None:
+    def move_left(self, event: tk.Event) -> None:
         if self._cursor_word_index == 0:
             prev_entity = self.previous_peer()
             if prev_entity is None:
                 return
             if not isinstance(prev_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
             prev_tok: Tok = prev_entity
-            prev_tok._cursor_word_index = len(prev_tok._word)
-            prev_tok._move_left(event)
+            prev_tok.set_cursor_word_index(len(prev_tok.word))
+            prev_tok.move_left(event)
             return
-        self._cursor_word_index -= 1
-        if self._cursor_word_index == 0:
-            self.place_cursor(Position(1, 0))
-        else:
-            x = self._font.measure(self._word[0:self._cursor_word_index])
-            self.place_cursor(Position(x, 0))
-        self.remove_cursor_everywhere_except_this()
+        x: int = 0 if self._cursor_word_index == 1 else self._font.measure(self._word[0:self._cursor_word_index - 1])
+        self.place_cursor_at_word_index_and_x_position(self._cursor_word_index - 1, x)
 
-    def _move_right(self, event: tk.Event) -> None:
+    def move_right(self, _event: tk.Event) -> None:
         if self._cursor_word_index == len(self._word) - 1:
             next_entity = self.next_peer()
             if next_entity is None:
                 return
             if not isinstance(next_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
             next_tok: Tok = next_entity
-            next_tok._cursor_word_index = 0
-            next_tok.place_cursor(Position(1, 0))
-            next_tok.remove_cursor_everywhere_except_this()
+            next_tok.place_cursor_at_word_index_and_x_position(0, 0)
             return
-        self._cursor_word_index += 1
-        x = self._font.measure(self._word[0:self._cursor_word_index])
+        x = self._font.measure(self._word[0:self._cursor_word_index + 1])
         if self._cursor_word_index == len(self._word):
             x -= 2
-        self.place_cursor(Position(x, 0))
-        self.remove_cursor_everywhere_except_this()
+        self.place_cursor_at_word_index_and_x_position(self._cursor_word_index + 1, x)
 
-    def _move_up(self, event: tk.Event) -> None:
+    def move_up(self, _event: tk.Event) -> None:
         abs_cursor_x = self.winfo_rootx() + self._cursor_pos.x
         abs_cursor_y = self.winfo_rooty() + self._cursor_pos.y
         closest: Tok | None = None
@@ -187,9 +199,9 @@ class Tok(AbstractToken):
             ent = ent.previous_peer()
         if closest is None:
             return
-        closest._place_cursor_x(abs_cursor_x - closest.winfo_rootx())
+        closest.place_cursor_x(abs_cursor_x - closest.winfo_rootx())
 
-    def _move_down(self, event: tk.Event) -> None:
+    def move_down(self, _event: tk.Event) -> None:
         abs_cursor_x = self.winfo_rootx() + self._cursor_pos.x
         abs_cursor_y = self.winfo_rooty() + self._cursor_pos.y + self._cursor_height
         closest: Tok | None = None
@@ -210,12 +222,11 @@ class Tok(AbstractToken):
             ent = ent.next_peer()
         if closest is None:
             return
-        closest._place_cursor_x(abs_cursor_x - closest.winfo_rootx())
+        closest.place_cursor_x(abs_cursor_x - closest.winfo_rootx())
 
     def layout(self, pos: Position, frame_width: int) -> int:
-        width = self._font.measure(self._word)
-        if width < 2:
-            width = 2 # for carriage return etc, need space to display the cursor
+        # for carriage return etc, need space to display the cursor, hence at least 2:
+        width = max(self._font.measure(self._word), 2)
         height = self._font.metrics()['linespace']
         self.config(width=width, height=height) # probably unnecessary, but no harm done
         self.pack(padx=0, pady=0)
@@ -272,3 +283,7 @@ class Tok(AbstractToken):
     @override
     def add_child_entity(self, child: Entity) -> None:
         return
+
+    @property
+    def word(self) -> str:
+        return self._word

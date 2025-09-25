@@ -1,12 +1,14 @@
 import tkinter as tk
-from tkinter import Tk, Frame, Scrollbar
+from tkinter import Frame, Scrollbar, Tk
+
+from rdflib.graph import Graph
+
 from ezwrite.ui.chapter import Chapter
 from ezwrite.ui.paragraph import Paragraph
+from ezwrite.ui.position import Position
 from ezwrite.ui.sentence import Sentence
 from ezwrite.ui.tok import Tok
-from ezwrite.ui.position import Position
-from rdflib.graph import Graph
-from rdflib.namespace import Namespace
+
 
 class App:
     """This is the ezwrite main application."""
@@ -22,7 +24,7 @@ class App:
         self._chapter.configure(yscrollcommand=scrollbar.set)
         self._chapter.config(scrollregion=(0, 0, 400, 2000))  # width=400, height=2000
         # NIF: Namespace = Namespace("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core")
-        paragraph: Paragraph = Paragraph(self._chapter, 30)
+        paragraph: Paragraph = Paragraph(self._chapter, graph,30)
         sentence: Sentence = Sentence(paragraph)
         Tok(sentence, "Hello")
         Tok(sentence, " ")
@@ -72,7 +74,7 @@ class App:
         Tok(sentence, "text")
         Tok(sentence, ".")
         Tok(sentence, "\n")
-        paragraph2: Paragraph = Paragraph(self._chapter, 30)
+        paragraph2: Paragraph = Paragraph(self._chapter, graph, 30)
         sentence2: Sentence = Sentence(paragraph2)
         Tok(sentence2, "Hello")
         Tok(sentence2, " ")

@@ -1,5 +1,6 @@
 import threading
 
+
 class Lock:
     """Wrapper for threading.Lock so it can be used in with"""
     def __init__(self):

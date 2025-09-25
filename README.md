@@ -30,5 +30,6 @@ pip install pylint
 pip install pytest
 pip install pycycle
 pip install "mcp[cli]"
-pip insyall rdflib
+pip install rdflib
+pip install isort
 ```

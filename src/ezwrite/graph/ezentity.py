@@ -1,51 +1,15 @@
-from typing import Dict, List, override, Optional
-from abc import ABC, abstractmethod
-from rdflib.resource import Resource
-from ezwrite.graph.property_list import PropertyList
+from abc import ABC
+from typing import Optional, override
+
 from rdflib.graph import Graph
-from rdflib.resource import Resource
 from rdflib.term import URIRef
 
-class Entity(Resource, ABC):
-    @abstractmethod
-    def next_peer(self) -> Optional["Entity"]:
-        pass
+from ezwrite.graph.entity import Entity
+from ezwrite.graph.property_list import PropertyList
 
-    @abstractmethod
-    def previous_peer(self) -> Optional["Entity"]:
-        pass
-
-    @abstractmethod
-    def get_next_child(self, child: "Entity") -> Optional["Entity"]:
-        pass
-
-    @abstractmethod
-    def get_previous_child(self, child: "Entity") -> Optional["Entity"]:
-        pass
-
-    @abstractmethod
-    def first_child(self) -> Optional["Entity"]:
-        pass
-
-    @abstractmethod
-    def last_child(self) -> Optional["Entity"]:
-        pass
-
-    @property
-    @abstractmethod
-    def parent(self) -> Optional["Entity"]:
-        pass
-
-    @property
-    @abstractmethod
-    def child_entities(self) -> List["Entity"]:
-        pass
-
-    @abstractmethod
-    def add_child_entity(self, child: "Entity") -> None:
-        pass
 
 class EzEntity(Entity, ABC):
+    """All entities inherit from this partial implementation of Entity"""
     def __init__(self, graph: Graph, subject: URIRef):
         super().__init__(graph, subject)
         self._children_list = PropertyList()
@@ -65,15 +29,15 @@ class EzEntity(Entity, ABC):
         return parent.get_previous_child(self)
 
     @override
-    def get_next_child(self, ref_child: Entity) -> Optional[Entity]:
+    def get_next_child(self, child: Entity) -> Optional[Entity]:
         children = self.child_entities
         if children is None or len(children) == 0:
             return None
         found: bool = False
-        for child in children:
+        for this_child in children:
             if found:
-                return child
-            if child == ref_child:
+                return this_child
+            if this_child == child:
                 found = True
         if not found:
             return None
@@ -92,13 +56,13 @@ class EzEntity(Entity, ABC):
         return None
 
     @override
-    def get_previous_child(self, ref_child: Entity) -> Optional[Entity]:
+    def get_previous_child(self, child: Entity) -> Optional[Entity]:
         children = self.child_entities
         if children is None or len(children) == 0:
             return None
         prev_child: Entity | None = None
-        for child in children:
-            if child == ref_child:
+        for this_child in children:
+            if this_child == child:
                 if prev_child is not None:
                     return prev_child
                 parent = self.parent
@@ -114,7 +78,7 @@ class EzEntity(Entity, ABC):
                         prev_peer = prev_peer.previous_peer()
                     prev_parent_peer = prev_parent_peer.previous_peer()
                 return None
-            prev_child = child
+            prev_child = this_child
         return None
 
     @override

@@ -1,9 +1,15 @@
+from typing import Dict, List, Type
+
 from rdflib.term import URIRef
+
+from ezwrite.graph.entity import Entity
 from ezwrite.graph.ezproperty import EzProperty
-from ezwrite.graph.ezentity import Entity
-from typing import List, Type, Dict
+
 
 class PropertyList():
+    """An Entity can have a list of properties.
+    This conveniently allows them to be quickly searched for by
+    predicate and entity type"""
     def __init__(self):
         self.hashtable: Dict[str, Dict[str, List[Entity]]] = {}
 
