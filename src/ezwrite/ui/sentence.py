@@ -35,7 +35,10 @@ class SentenceContainer(EzwriteContainer, ABC):
 class Sentence(TokenContainer):
     """A sentence is not a UI element, it is just a collection of tokens."""
     def __init__(self, paragraph: SentenceContainer):
-        super().__init__(paragraph.graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Sentence"))
+        super().__init__(
+            paragraph.graph,
+            URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Sentence")
+        )
         self._paragraph = paragraph
         paragraph.add_child_entity(self)
 
@@ -52,6 +55,16 @@ class Sentence(TokenContainer):
     @override
     def child_entities(self) -> List[Entity]:
         return self._children_list.list_of(EzProperty.HAS_PART, Tok)
+
+    @override
+    def parent_frame(self) -> tk.Frame:
+        parent = self.parent
+        if parent is None:
+            raise ArgumentTypeError("The parent of a sentence must not be None")
+        if not isinstance(parent, SentenceContainer):
+            raise ArgumentTypeError("The sentence parent must be a SentenceContainer")
+        sentence_container: SentenceContainer = parent
+        return sentence_container.frame
 
     @override
     def add_child_entity(self, child: Entity) -> None:

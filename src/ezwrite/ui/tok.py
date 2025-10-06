@@ -49,6 +49,10 @@ class TokenContainer(EzwriteContainer, ABC):
     def layout(self, pos: Position, frame_width: int) -> int:
         pass
 
+    @abstractmethod
+    def parent_frame(self) -> tk.Frame:
+        pass
+
 
 class Tok(AbstractToken):
     """A Tok is a token (could not use the name 'Token' - already in use)
@@ -70,8 +74,7 @@ class Tok(AbstractToken):
         if font is None:
             font = tkinter.font.Font(name="TkDefaultFont", exists=True)
         self._font = font
-        if sentence.parent is None: raise ArgumentTypeError("The sentence must not be None")
-        frame: tk.Frame = sentence.parent.frame
+        frame: tk.Frame = sentence.parent_frame()
         super().__init__(sentence.graph)
         self._canvas = tk.Canvas(frame,
                                  borderwidth=0,
