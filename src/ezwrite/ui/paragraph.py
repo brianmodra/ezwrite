@@ -32,16 +32,29 @@ class Paragraph(SentenceContainer):
     """A paragraph is a Frame in the Canvas (Chapter). A Paragraph contains sentences. """
     def __init__(self, chapter: ParagraphContainer, graph: Graph, first_line_indent: int = 0):
         super().__init__(
-            chapter.canvas,
             graph,
             URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Paragraph")
         )
         self._graph = graph
         self._chapter = chapter
-        self._frame_id = self._chapter.canvas.create_window(0, 0, anchor="nw", window=self)
+        self._frame = tk.Frame(chapter.canvas,
+                          bg="light grey",
+                          bd=0,
+                          height=80,
+                          padx=0,
+                          pady=0,
+                          borderwidth=0,
+                          relief="flat",
+                          cursor="ibeam")
+        self._frame.bind('<Button-1>', self._handle_mouse_button_1)
+        self._frame_id = self._chapter.canvas.create_window(0, 0, anchor="nw", window=self._frame)
         self._first_line_indent = first_line_indent
-        self.bind('<Button-1>', self._handle_mouse_button_1)
         chapter.add_child_entity(self)
+
+    @property
+    @override
+    def frame(self) -> tk.Frame:
+        return self._frame
 
     @property
     def graph(self) -> Graph:
@@ -58,7 +71,7 @@ class Paragraph(SentenceContainer):
             if not isinstance(sentence, Sentence): raise ArgumentTypeError("sentence must be an instance of Sentence")
             container: Sentence = sentence
             frame_height = container.layout(pos, canvas_width)
-        self.place(x=0, y=frame_y_offset, height=frame_height, width=canvas_width)
+        self._frame.place(x=0, y=frame_y_offset, height=frame_height, width=canvas_width)
         return frame_height
 
     @property

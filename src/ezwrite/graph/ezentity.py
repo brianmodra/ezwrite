@@ -14,6 +14,12 @@ class EzEntity(Entity, ABC):
         super().__init__(graph, subject)
         self._children_list = PropertyList()
 
+    def __eq__(self, other) -> bool:
+        return self is other
+
+    def __ne__(self, other) -> bool:
+        return not self is other
+
     @override
     def next_peer(self) -> Optional[Entity]:
         parent = self.parent

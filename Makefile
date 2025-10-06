@@ -12,4 +12,7 @@ lint:
 detect_cycles:
 	cd src/ezwrite; pycycle --here
 
-.PHONY: all check_static_typing lint detect_cycles sort
+run:
+	cd src; ../.venv/bin/python3 -m main
+
+.PHONY: all check_static_typing lint detect_cycles sort run

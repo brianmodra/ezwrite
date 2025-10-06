@@ -18,10 +18,10 @@ class PropertyList():
             entity: Entity):
         pred_key: str = predicate.uri.lower() if isinstance(predicate, EzProperty) else predicate.lower()
         type_key: str = entity.__class__.__name__
-        existing: Dict[str, List[Entity]] | None = self.hashtable[pred_key]
-        if existing is None:
+        if pred_key not in self.hashtable:
             self.hashtable[pred_key] = {type_key: [entity]}
             return
+        existing: Dict[str, List[Entity]] = self.hashtable[pred_key]
         existing_list: List[Entity] = existing[type_key]
         if entity in existing_list:
             return
@@ -33,9 +33,9 @@ class PropertyList():
                 ) -> List[Entity]:
         pred_key: str = predicate.uri.lower() if isinstance(predicate, EzProperty) else predicate.lower()
         type_key: str = entity_type_key if isinstance(entity_type_key, str) else entity_type_key.__name__
-        existing: Dict[str, List[Entity]] | None = self.hashtable[pred_key]
-        if existing is None:
+        if pred_key not in self.hashtable:
             return []
+        existing: Dict[str, List[Entity]] = self.hashtable[pred_key]
         existing_list: List[Entity] = existing[type_key]
         if existing_list is None:
             return []

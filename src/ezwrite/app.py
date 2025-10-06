@@ -19,10 +19,10 @@ class App:
         self._frame.pack(fill="both", expand=True)
         graph: Graph = Graph()
         self._chapter: Chapter = Chapter(self._frame, graph)
-        scrollbar: Scrollbar = tk.Scrollbar(self._frame, orient="vertical", command=self.chapter.yview)
+        scrollbar: Scrollbar = tk.Scrollbar(self._frame, orient="vertical", command=self.chapter.canvas.yview)
         scrollbar.pack(side="right", fill="y")
-        self._chapter.configure(yscrollcommand=scrollbar.set)
-        self._chapter.config(scrollregion=(0, 0, 400, 2000))  # width=400, height=2000
+        self._chapter.canvas.configure(yscrollcommand=scrollbar.set)
+        self._chapter.canvas.config(scrollregion=(0, 0, 400, 2000))  # width=400, height=2000
         # NIF: Namespace = Namespace("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core")
         paragraph: Paragraph = Paragraph(self._chapter, graph,30)
         sentence: Sentence = Sentence(paragraph)

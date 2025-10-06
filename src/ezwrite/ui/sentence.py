@@ -12,19 +12,10 @@ from ezwrite.ui.position import Position
 from ezwrite.ui.tok import AbstractToken, EzwriteContainer, Tok, TokenContainer
 
 
-class SentenceContainer(EzwriteContainer, tk.Frame, ABC):
+class SentenceContainer(EzwriteContainer, ABC):
     """Just needed to avoid circular dependencies"""
-    def __init__(self, canvas: tk.Canvas, graph: Graph, subject: URIRef):
+    def __init__(self, graph: Graph, subject: URIRef):
         super().__init__(graph, subject)
-        tk.Frame.__init__(self, canvas,
-                      bg="light grey",
-                      bd=0,
-                      height=80,
-                      padx=0,
-                      pady=0,
-                      borderwidth=0,
-                      relief="flat",
-                      cursor="ibeam")
 
     @property
     @abstractmethod
@@ -35,11 +26,16 @@ class SentenceContainer(EzwriteContainer, tk.Frame, ABC):
     def layout(self, frame_y_offset: int, canvas_width: int) -> int:
         pass
 
+    @property
+    @abstractmethod
+    def frame(self) -> tk.Frame:
+        pass
+
 
 class Sentence(TokenContainer):
     """A sentence is not a UI element, it is just a collection of tokens."""
     def __init__(self, paragraph: SentenceContainer):
-        super().__init__(self.graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Sentence"))
+        super().__init__(paragraph.graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Sentence"))
         self._paragraph = paragraph
         paragraph.add_child_entity(self)
 

@@ -12,25 +12,25 @@ from ezwrite.ui.tok import AbstractToken
 from ezwrite.utils.lock import Lock
 
 
-class Chapter(ParagraphContainer, tk.Canvas):
+class Chapter(ParagraphContainer):
     """The entire canvas of the editor is (at one point in time) a chapter of the book.
     It contains the paragraphs, and the canvas is scrollable."""
     def __init__(self, frame: tk.Frame, graph: Graph):
-        tk.Canvas.__init__(self, frame, bg="white", cursor="arrow")
         super().__init__(graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Chapter"))
         self._lock: Lock = Lock()
         self._laying_out: bool = True
         self._frame = frame
-        self.pack(side="left", fill="both", expand=True)
-        self.bind("<Configure>", self.on_resize)
-        self.bind_all('<KeyPress>', self._handle_key_press)
         self._laying_out = False
         self._graph = graph
+        self._canvas = tk.Canvas(frame, bg="white", cursor="arrow")
+        self._canvas.pack(side="left", fill="both", expand=True)
+        self._canvas.bind("<Configure>", self.on_resize)
+        self._canvas.bind_all('<KeyPress>', self._handle_key_press)
 
     @property
     @override
     def canvas(self) -> tk.Canvas:
-        return self
+        return self._canvas
 
     @property
     def graph(self) -> Graph:
@@ -55,7 +55,7 @@ class Chapter(ParagraphContainer, tk.Canvas):
 
     def on_resize(self, event: tk.Event) -> None:
         """Called when the canvas is resized."""
-        print(f"Canvas resized to {event.width}x{event.height} width = {self.winfo_width()}")
+        print(f"Canvas resized to {event.width}x{event.height} width = {self._canvas.winfo_width()}")
 
         self.layout()
 
@@ -65,7 +65,7 @@ class Chapter(ParagraphContainer, tk.Canvas):
                 return
             self._laying_out = True
 
-        canvas_width: int = self.winfo_width()
+        canvas_width: int = self._canvas.winfo_width()
         frame_y_offset: int = 0
         for child in self.child_entities:
             if not isinstance(child, Paragraph): raise ArgumentTypeError("children need to be instances of Paragraph")
