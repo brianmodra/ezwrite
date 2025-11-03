@@ -6,6 +6,7 @@ from typing import List, override
 from rdflib.graph import Graph
 from rdflib.term import URIRef
 
+from ezwrite.editors.ez_editor import EzEditor
 from ezwrite.graph.ezentity import Entity
 from ezwrite.graph.ezproperty import EzProperty
 from ezwrite.ui.position import Position
@@ -40,7 +41,34 @@ class Sentence(TokenContainer):
             URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Sentence")
         )
         self._paragraph = paragraph
+        self._editor: EzEditor | None = None
         paragraph.add_child_entity(self)
+
+    @override
+    def zap(self) -> None:
+        for child in self.child_entities:
+            child.zap()
+        super().zap()
+
+    @property
+    @override
+    def editor(self) -> EzEditor:
+        if self._editor is not None:
+            return self._editor
+        chapter_editor = self.get_root_editor()
+        self._editor = chapter_editor.get_sentence_editor()
+        return self._editor
+
+
+    def inside(self, widget: tk.Misc) -> Entity | None:
+        for child in self.child_entities:
+            if not isinstance(child, Tok):
+                continue
+            token: Tok = child
+            entity: Entity | None = token.inside(widget)
+            if entity is not None:
+                return entity
+        return None
 
     @property
     def graph(self) -> Graph:
@@ -54,7 +82,7 @@ class Sentence(TokenContainer):
     @property
     @override
     def child_entities(self) -> List[Entity]:
-        return self._children_list.list_of(EzProperty.HAS_PART, Tok)
+        return self._property_list.entities_of(EzProperty.HAS_PART, Tok)
 
     @override
     def parent_frame(self) -> tk.Frame:
@@ -70,7 +98,7 @@ class Sentence(TokenContainer):
     def add_child_entity(self, child: Entity) -> None:
         if not isinstance(child, Tok): raise ArgumentTypeError("label needs to be an instance of Token")
         token: Tok = child
-        self._children_list.append(EzProperty.HAS_PART, token)
+        self._property_list.append(EzProperty.HAS_PART, token)
 
     @override
     def remove_cursor_except(self, tok: AbstractToken) -> None:
@@ -98,3 +126,16 @@ class Sentence(TokenContainer):
             tok_height: int = token.height
             height = max(height, tok_height)
         return height
+
+    def join_tokens(self, a: Tok, b: Tok) -> Tok:
+        joined_word: str = a.word + b.word
+        joined_tok = Tok(self, joined_word, a.font, False)
+        self._property_list.insert_before(a, EzProperty.HAS_PART, joined_tok)
+        return joined_tok
+
+    def append_copy_tokens_from(self, other_sentence: "Sentence") -> None:
+        for child in other_sentence.child_entities:
+            if not isinstance(child, Tok):
+                continue
+            tok: Tok = child
+            Tok(self, tok.word, tok.font)

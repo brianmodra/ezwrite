@@ -5,10 +5,13 @@ from typing import List, override
 from rdflib.graph import Graph
 from rdflib.term import URIRef
 
+from ezwrite.editors.chapter_editor import ChapterEditor
+from ezwrite.editors.ez_editor import EzEditor
 from ezwrite.graph.ezentity import Entity
 from ezwrite.graph.ezproperty import EzProperty
+from ezwrite.ui.key_handler import Key, KeyHandler
 from ezwrite.ui.paragraph import Paragraph, ParagraphContainer
-from ezwrite.ui.tok import AbstractToken
+from ezwrite.ui.tok import AbstractToken, Tok
 from ezwrite.utils.lock import Lock
 
 
@@ -25,7 +28,17 @@ class Chapter(ParagraphContainer):
         self._canvas = tk.Canvas(frame, bg="white", cursor="arrow")
         self._canvas.pack(side="left", fill="both", expand=True)
         self._canvas.bind("<Configure>", self.on_resize)
-        self._canvas.bind_all('<KeyPress>', self._handle_key_press)
+        self._frame.bind_all('<Button-1>', self._handle_mouse_button_1)
+        self._editor = ChapterEditor()
+        key_handler = KeyHandler(self._canvas)
+        key_handler.add_handler(self.handle_arrow_click)
+        key_handler.add_handler(self.handle_editing_keys)
+        key_handler.add_handler(self.handle_typed_character)
+
+    @property
+    @override
+    def editor(self) -> EzEditor:
+        return self._editor
 
     @property
     @override
@@ -36,15 +49,95 @@ class Chapter(ParagraphContainer):
     def graph(self) -> Graph:
         return self._graph
 
-    def _handle_key_press(self, event: tk.Event) -> None:
-        print(f"key press {event.char}, {event.keycode}, {event.keysym}")
+    def _handle_mouse_button_1(self, event: tk.Event) -> None:
+        entity: Entity | None = self.inside(event.widget)
+        if entity is None:
+            print(f"location outside: x={event.x}, y={event.y}")
+            return
+        if isinstance(entity, Chapter):
+            print(f"chapter: x={event.x}, y={event.y}")
+            return
+        if isinstance(entity, Paragraph):
+            print(f"paragraph: x={event.x}, y={event.y}")
+            paragraph: Paragraph = entity
+            closest: Entity | None = paragraph.get_closest_token(event.widget, event.x, event.y)
+            if closest is not None and isinstance(closest, Tok):
+                closest_tok: Tok = closest
+                closest_tok.place_cursor_x(min(max(event.x - closest_tok.x, 0), closest_tok.width))
+                print(f"token: {closest_tok.word} x={event.x}, y={event.y}")
+        if isinstance(entity, Tok):
+            tok: Tok = entity
+            tok.place_cursor_x(event.x)
+            print(f"token: {tok.word} x={event.x}, y={event.y}")
+            return
+
+    def handle_arrow_click(self, event: tk.Event, keys: List[Key]) -> bool:
+        if len(keys) != 1:
+            return False
+        keysym: str = keys[0].keysym
+        if keysym not in ('Left', 'Right', 'Up', 'Down'):
+            return False
+        entity: Entity | None = self.inside(event.widget)
+        if entity is None:
+            return False
+        if not isinstance(entity, Tok):
+            return False
+        tok: Tok = entity
+        match keysym:
+            case "Left":
+                tok.move_left()
+            case "Right":
+                tok.move_right()
+            case "Up":
+                tok.move_up()
+            case "Down":
+                tok.move_down()
+        return True
+
+    def handle_editing_keys(self, event: tk.Event, keys: List[Key]) -> bool:
+        entity: Entity | None = self.inside(event.widget)
+        if entity is None:
+            return False
+        if not isinstance(entity, Tok):
+            return False
+        tok: Tok = entity
+        if len(keys) == 1 and keys[0].keysym == "BackSpace":
+            if tok.editor.delete_character_left(tok):
+                self.cleanup_empty_containers()
+                return True
+        return False
+
+    def handle_typed_character(self, event: tk.Event, keys: List[Key]) -> bool:
+        if len(keys) != 1:
+            return False
+        keysym: str = keys[0].keysym
+        entity: Entity | None = self.inside(event.widget)
+        if entity is None:
+            return False
+        if not isinstance(entity, Tok):
+            return False
+        tok: Tok = entity
+        # TODO: finish this
+        return False
+
+    def inside(self, widget: tk.Misc) -> Entity | None:
+        for child in self.child_entities:
+            if not isinstance(child, Paragraph):
+                continue
+            paragraph: Paragraph = child
+            entity: Entity | None = paragraph.inside(widget)
+            if entity is not None:
+                return entity
+        if self._canvas == widget:
+            return self
+        return None
 
     @override
     def add_child_entity(self, child: Entity) -> None:
         if not isinstance(child, Paragraph):
             raise ArgumentTypeError("token_container needs to be an instance of Sentence")
         paragraph: Paragraph = child
-        self._children_list.append(EzProperty.HAS_PART, paragraph)
+        self._property_list.append(EzProperty.HAS_PART, paragraph)
 
     @override
     def remove_cursor_except(self, tok: AbstractToken) -> None:
@@ -84,4 +177,4 @@ class Chapter(ParagraphContainer):
     @property
     @override
     def child_entities(self) -> List[Entity]:
-        return self._children_list.list_of(EzProperty.HAS_PART, Paragraph)
+        return self._property_list.entities_of(EzProperty.HAS_PART, Paragraph)

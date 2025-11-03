@@ -2,20 +2,55 @@ import tkinter as tk
 import tkinter.font
 from abc import ABC, abstractmethod
 from argparse import ArgumentTypeError
-from typing import List, override
+from typing import List, Optional, override
 
 from rdflib.graph import Graph
 from rdflib.term import URIRef
 
+from ezwrite.editors.ez_editor import EzEditor
 from ezwrite.graph.ezentity import Entity, EzEntity
+from ezwrite.graph.graph_token import GraphToken
 from ezwrite.ui.position import Position
 
 
-class AbstractToken(EzEntity, ABC):
+class EditableEntity(ABC):
+    """provides functions needed to make an entity editable"""
+    @property
+    @abstractmethod
+    def editor(self) -> EzEditor:
+        pass
+
+    @property
+    @abstractmethod
+    def parent(self) -> Optional[Entity]:
+        pass
+
+    def get_root_container(self) -> "RootContainer":
+        container: EzwriteContainer | None = None
+        entity: Entity | None = self.parent
+        while entity is not None:
+            if not isinstance(entity, EzwriteContainer):
+                break
+            container = entity
+            entity = entity.parent
+        if container is None:
+            raise ValueError("root container can't be found")
+        if not isinstance(container, RootContainer):
+            raise ValueError("Root container must be an instance of RootContainer")
+        parent: RootContainer = container
+        return parent
+
+    def get_root_editor(self) -> EzEditor:
+        parent: EzwriteContainer = self.get_root_container()
+        root_editor: EzEditor = parent.editor
+        return root_editor
+
+class AbstractToken(GraphToken, EditableEntity, ABC):
     """This provides an interface to manipulate a token, without specifying
-    the actual implemetation of the token"""
+    the actual implementation of the token"""
     def __init__(self, graph: Graph):
-        super().__init__(graph, URIRef("http://persistence.uni-leipzig.org/nlp2rdf/ontologies/nif-core#Token"))
+        super().__init__(graph)
+
     @abstractmethod
     def remove_cursor(self) -> None:
         pass
@@ -29,7 +64,8 @@ class AbstractToken(EzEntity, ABC):
     def canvas(self) -> tk.Canvas:
         pass
 
-class EzwriteContainer(EzEntity, ABC):
+
+class EzwriteContainer(EzEntity, EditableEntity, ABC):
     """A generic container interface for all objects in the UI that contain others,
     for example, sentence, paragraph, and chapter."""
     def __init__(self, graph: Graph, subject: URIRef):
@@ -37,6 +73,12 @@ class EzwriteContainer(EzEntity, ABC):
 
     @abstractmethod
     def remove_cursor_except(self, tok: AbstractToken) -> None:
+        pass
+
+
+class RootContainer(EzwriteContainer, ABC):
+    @abstractmethod
+    def layout(self) -> None:
         pass
 
 
@@ -69,7 +111,7 @@ class Tok(AbstractToken):
         Tok.cursor_index = (Tok.cursor_index + 1) % len(Tok.cursor_colours)
         return Tok.cursor_colours[Tok.cursor_index]
 
-    def __init__(self, sentence: TokenContainer, word: str, font=None):
+    def __init__(self, sentence: TokenContainer, word: str, font=None, append_to_sentence = True):
         self._word = word
         if font is None:
             font = tkinter.font.Font(name="TkDefaultFont", exists=True)
@@ -103,34 +145,63 @@ class Tok(AbstractToken):
         self._canvas.config(width=width, height=height)
         self._canvas.pack()
         self._sentence: TokenContainer = sentence
-        self._canvas.bind('<Button-1>', self._handle_mouse_button_1)
-        self._canvas.bind('<Left>', self.move_left)
-        self._canvas.bind('<Right>', self.move_right)
-        self._canvas.bind('<Up>', self.move_up)
-        self._canvas.bind('<Down>', self.move_down)
-        sentence.add_child_entity(self)
+        self._editor: EzEditor | None = None
+        if append_to_sentence:
+            sentence.add_child_entity(self)
+
+    @override
+    def zap(self) -> None:
+        self._cursor_pos.x = -1
+        self._canvas.destroy()
+        super().zap()
+
+    def change_word(self, new_word: str):
+        self._word = new_word
+        self._canvas.itemconfig(self._text_id, text=new_word)
+        self.get_root_container().layout()
+        self.move_left()
+
+    def inside(self, widget: tk.Misc) -> Entity | None:
+        if self._canvas == widget:
+            return self
+        return None
+
+    @property
+    def font(self) -> tkinter.font.Font:
+        return self._font
+
+    @property
+    def cursor_pos(self) -> Position:
+        return self._cursor_pos
+
+    @property
+    def cursor_word_index(self) -> int:
+        return self._cursor_word_index
+
+    @property
+    @override
+    def editor(self) -> EzEditor:
+        if self._editor is not None:
+            return self._editor
+        chapter_editor = self.get_root_editor()
+        self._editor = chapter_editor.get_token_editor()
+        return self._editor
 
     @property
     @override
     def canvas(self) -> tk.Canvas:
         return self._canvas
 
-    def _handle_mouse_button_1(self, event: tk.Event) -> None:
-        self.place_cursor_x(event.x)
-
     def remove_cursor_everywhere_except_this(self) -> None:
-        parent: EzwriteContainer | None = None
-        entity: Entity | None = self._sentence
-        while entity is not None:
-            parent_ent = entity.parent
-            if parent_ent is None or not isinstance(parent_ent, EzwriteContainer):
-                break
-            parent = parent_ent
-            entity = parent
-        if parent is not None:
-            parent.remove_cursor_except(self)
+        self.get_root_container().remove_cursor_except(self)
 
-    def place_cursor_at_word_index_and_x_position(self, word_index: int, x: int):
+    def place_cursor_at_word_index(self, word_index: int):
+        max_len = len(self._word)
+        i = max_len if word_index == -1 else min(max_len, word_index)
+        x = 0 if i == 0 else self._font.measure(self._word[0:i])
+        self._place_cursor_at_word_index_and_x_position(i, x)
+
+    def _place_cursor_at_word_index_and_x_position(self, word_index: int, x: int):
         self._cursor_word_index = word_index
         self.place_cursor(Position(x + 1 if word_index == 0 else x, 0))
         self.remove_cursor_everywhere_except_this()
@@ -158,11 +229,11 @@ class Tok(AbstractToken):
             else:
                 if not isinstance(next_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
                 next_tok: Tok = next_entity
-                next_tok.place_cursor_at_word_index_and_x_position(0, 0)
+                next_tok._place_cursor_at_word_index_and_x_position(0, 0)
                 return
-        self.place_cursor_at_word_index_and_x_position(word_index, closest_x)
+        self._place_cursor_at_word_index_and_x_position(word_index, closest_x)
 
-    def move_left(self, event: tk.Event) -> None:
+    def move_left(self) -> None:
         if self._cursor_word_index == 0:
             prev_entity = self.previous_peer()
             if prev_entity is None:
@@ -170,26 +241,26 @@ class Tok(AbstractToken):
             if not isinstance(prev_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
             prev_tok: Tok = prev_entity
             prev_tok.set_cursor_word_index(len(prev_tok.word))
-            prev_tok.move_left(event)
+            prev_tok.move_left()
             return
         x: int = 0 if self._cursor_word_index == 1 else self._font.measure(self._word[0:self._cursor_word_index - 1])
-        self.place_cursor_at_word_index_and_x_position(self._cursor_word_index - 1, x)
+        self._place_cursor_at_word_index_and_x_position(self._cursor_word_index - 1, x)
 
-    def move_right(self, _event: tk.Event) -> None:
+    def move_right(self) -> None:
         if self._cursor_word_index == len(self._word) - 1:
             next_entity = self.next_peer()
             if next_entity is None:
                 return
             if not isinstance(next_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
             next_tok: Tok = next_entity
-            next_tok.place_cursor_at_word_index_and_x_position(0, 0)
+            next_tok._place_cursor_at_word_index_and_x_position(0, 0)
             return
         x = self._font.measure(self._word[0:self._cursor_word_index + 1])
         if self._cursor_word_index == len(self._word):
             x -= 2
-        self.place_cursor_at_word_index_and_x_position(self._cursor_word_index + 1, x)
+        self._place_cursor_at_word_index_and_x_position(self._cursor_word_index + 1, x)
 
-    def move_up(self, _event: tk.Event) -> None:
+    def move_up(self) -> None:
         abs_cursor_x = self._canvas.winfo_rootx() + self._cursor_pos.x
         abs_cursor_y = self._canvas.winfo_rooty() + self._cursor_pos.y
         closest: Tok | None = None
@@ -212,7 +283,7 @@ class Tok(AbstractToken):
             return
         closest.place_cursor_x(abs_cursor_x - closest.canvas.winfo_rootx())
 
-    def move_down(self, _event: tk.Event) -> None:
+    def move_down(self) -> None:
         abs_cursor_x = self._canvas.winfo_rootx() + self._cursor_pos.x
         abs_cursor_y = self._canvas.winfo_rooty() + self._cursor_pos.y + self._cursor_height
         closest: Tok | None = None
@@ -248,10 +319,6 @@ class Tok(AbstractToken):
         pos.x += width
         return pos.y + height
 
-    @property
-    def height(self) -> int:
-        return self._canvas.winfo_height()
-
     @override
     def remove_cursor(self) -> None:
         if self._cursor_pos.x < 0:
@@ -281,6 +348,10 @@ class Tok(AbstractToken):
         self._canvas.itemconfig(self._cursor_id, fill=Tok._cursor_colour())
         self._cursor_job_id = self._canvas.winfo_toplevel().after(370, self.cycle_cursor_colour)
 
+    @override
+    def remove_child_entity(self, child: Entity) -> bool:
+        return False # at the moment a Tok has no children
+
     @property
     @override
     def parent(self) -> Entity:
@@ -292,9 +363,29 @@ class Tok(AbstractToken):
         return []
 
     @override
+    def can_have_children(self) -> bool:
+        return False
+
+    @override
     def add_child_entity(self, child: Entity) -> None:
         return
 
     @property
     def word(self) -> str:
         return self._word
+
+    @property
+    def x(self) -> int:
+        return self._canvas.winfo_x()
+
+    @property
+    def y(self) -> int:
+        return self._canvas.winfo_y()
+
+    @property
+    def width(self) -> int:
+        return self._canvas.winfo_width()
+
+    @property
+    def height(self) -> int:
+        return self._canvas.winfo_height()
