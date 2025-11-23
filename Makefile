@@ -1,4 +1,4 @@
-all: sort check_static_typing lint detect_cycles
+all: sort check_static_typing detect_cycles lint
 
 sort:
 	isort src/ezwrite

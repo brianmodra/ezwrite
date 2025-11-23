@@ -54,6 +54,15 @@ class Paragraph(SentenceContainer):
         self._editor: EzEditor | None = None
         chapter.add_child_entity(self)
 
+    @override
+    def zap(self) -> None:
+        super().zap()
+        self._frame.destroy()
+
+    @override
+    def is_container(self) -> bool:
+        return True
+
     @property
     @override
     def editor(self) -> EzEditor:
@@ -63,38 +72,52 @@ class Paragraph(SentenceContainer):
         self._editor = chapter_editor.get_paragraph_editor()
         return self._editor
 
-    def inside(self, widget: tk.Misc) -> Entity | None:
+    def widget_inside(self, widget: tk.Misc) -> Entity | None:
         for child in self.child_entities:
             if not isinstance(child, Sentence):
                 continue
             sentence: Sentence = child
-            entity: Entity | None = sentence.inside(widget)
+            entity: Entity | None = sentence.widget_inside(widget)
             if entity is not None:
                 return entity
         if self._frame == widget:
             return self
         return None
 
-    def get_closest_token(self, widget: tk.Misc, x: int, y: int) -> Entity | None:
-        if widget != self._frame:
-            return None
+    def get_closest_token(self, x: int, y: int) -> Entity | None:
+        # first try to find if the coordinate is within the contained tokens
+        for sen in self.child_entities:
+            if not isinstance(sen, Sentence):
+                continue
+            sentence: Sentence = sen
+            for child in sentence.child_entities:
+                if not isinstance(child, Tok):
+                    continue
+                tok: Tok = child
+                tok_x1 = tok.root_x
+                tok_y1 = tok.root_y
+                tok_x2 = tok_x1 + tok.width - 1
+                tok_y2 = tok_y1 + tok.height - 1
+                if tok_x1 <= x <= tok_x2 and tok_y1 <= y <= tok_y2:
+                    return tok
+        # not within, then find the closest token at the start or end of the paragraph.
         ent: Entity | None = self.first_child()
         if ent is not None:
             ent = ent.first_child()
             if ent is not None and isinstance(ent, Tok):
                 token: Tok = ent
-                if y < token.y:
+                if y < token.root_y:
                     return token
-                if y < token.y + token.height and x < token.x:
+                if y < token.root_y + token.height and x < token.root_x:
                     return token
         ent = self.last_child()
         if ent is not None:
             ent = ent.last_child()
             if ent is not None and isinstance(ent, Tok):
                 token = ent
-                if y < token.y:
+                if y < token.root_y:
                     return None
-                if x >= token.x + token.width:
+                if x >= token.root_x + token.width or y >= token.root_y + token.height:
                     return token
         return None
 
@@ -155,3 +178,41 @@ class Paragraph(SentenceContainer):
     @override
     def child_entities(self) -> List[Entity]:
         return self._property_list.entities_of(EzProperty.HAS_PART, Sentence)
+
+    @override
+    def deselect_all(self) -> None:
+        for child in self.child_entities:
+            if not isinstance(child, Sentence):
+                continue
+            sentence: Sentence = child
+            sentence.deselect_all()
+
+    @override
+    @property
+    def x(self) -> int:
+        return self._frame.winfo_x()
+
+    @override
+    @property
+    def y(self) -> int:
+        return self._frame.winfo_y()
+
+    @override
+    @property
+    def root_x(self) -> int:
+        return self._frame.winfo_rootx()
+
+    @override
+    @property
+    def root_y(self) -> int:
+        return self._frame.winfo_rooty()
+
+    @override
+    @property
+    def width(self) -> int:
+        return self._frame.winfo_width()
+
+    @override
+    @property
+    def height(self) -> int:
+        return self._frame.winfo_height()

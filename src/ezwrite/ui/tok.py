@@ -2,7 +2,7 @@ import tkinter as tk
 import tkinter.font
 from abc import ABC, abstractmethod
 from argparse import ArgumentTypeError
-from typing import List, Optional, override
+from typing import List, Optional, Tuple, override
 
 from rdflib.graph import Graph
 from rdflib.term import URIRef
@@ -75,8 +75,13 @@ class EzwriteContainer(EzEntity, EditableEntity, ABC):
     def remove_cursor_except(self, tok: AbstractToken) -> None:
         pass
 
+    @abstractmethod
+    def deselect_all(self) -> None:
+        pass
+
 
 class RootContainer(EzwriteContainer, ABC):
+    """Generic class of the container of other containers - the root of a document"""
     @abstractmethod
     def layout(self) -> None:
         pass
@@ -95,6 +100,13 @@ class TokenContainer(EzwriteContainer, ABC):
     def parent_frame(self) -> tk.Frame:
         pass
 
+
+class RelativeCursor():
+    """Used to contain a cursor position relative to a token"""
+    def __init__(self, x: int, word_index: int, token: "Tok"):
+        self.x = x
+        self.word_index = word_index
+        self.token = token
 
 class Tok(AbstractToken):
     """A Tok is a token (could not use the name 'Token' - already in use)
@@ -137,6 +149,7 @@ class Tok(AbstractToken):
             self._cursor_pos.y + self._cursor_height,
             fill="white",
             width=2)
+        self._highlight_id: int | None = None
         self._text_id = self._canvas.create_text(0, 0,
                          text=word,
                          fill="black",
@@ -161,7 +174,7 @@ class Tok(AbstractToken):
         self.get_root_container().layout()
         self.move_left()
 
-    def inside(self, widget: tk.Misc) -> Entity | None:
+    def widget_inside(self, widget: tk.Misc) -> Entity | None:
         if self._canvas == widget:
             return self
         return None
@@ -192,16 +205,40 @@ class Tok(AbstractToken):
     def canvas(self) -> tk.Canvas:
         return self._canvas
 
+    def select(self, start_word_index: int = 0, end_word_index: int = -1) -> None:
+        self.deselect()
+        (start_word_index, start_x) = self.get_x_pos_of_word_index(start_word_index)
+        (end_word_index, end_x) = self.get_x_pos_of_word_index(end_word_index)
+        self._highlight_id = self._canvas.create_rectangle(
+            start_x,
+            0,
+            end_x,
+            self._cursor_height,
+            fill="turquoise", outline=""
+        )
+        self._canvas.tag_lower(self._highlight_id, self._cursor_id)
+
+    def deselect(self) -> bool:
+        if self._highlight_id is None:
+            return False
+        self._canvas.delete(self._highlight_id)
+        self._highlight_id = None
+        return True
+
+    def get_x_pos_of_word_index(self, word_index) -> Tuple[int, int]:
+        max_len = len(self._word)
+        i = max_len if word_index == -1 else min(max_len, word_index)
+        x = 0 if i == 0 else self._font.measure(self._word[0:i])
+        return (i, x)
+
     def remove_cursor_everywhere_except_this(self) -> None:
         self.get_root_container().remove_cursor_except(self)
 
     def place_cursor_at_word_index(self, word_index: int):
-        max_len = len(self._word)
-        i = max_len if word_index == -1 else min(max_len, word_index)
-        x = 0 if i == 0 else self._font.measure(self._word[0:i])
-        self._place_cursor_at_word_index_and_x_position(i, x)
+        (i, x) = self.get_x_pos_of_word_index(word_index)
+        self.place_cursor_at_word_index_and_x_position(i, x)
 
-    def _place_cursor_at_word_index_and_x_position(self, word_index: int, x: int):
+    def place_cursor_at_word_index_and_x_position(self, word_index: int, x: int):
         self._cursor_word_index = word_index
         self.place_cursor(Position(x + 1 if word_index == 0 else x, 0))
         self.remove_cursor_everywhere_except_this()
@@ -209,7 +246,7 @@ class Tok(AbstractToken):
     def set_cursor_word_index(self, word_index: int):
         self._cursor_word_index = word_index
 
-    def place_cursor_x(self, event_x: int) -> None:
+    def calculate_cursor_x(self, event_x: int) -> RelativeCursor:
         closest_x: int = 0
         closest_distance: int | None = None
         word_index: int = 0
@@ -229,9 +266,14 @@ class Tok(AbstractToken):
             else:
                 if not isinstance(next_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
                 next_tok: Tok = next_entity
-                next_tok._place_cursor_at_word_index_and_x_position(0, 0)
-                return
-        self._place_cursor_at_word_index_and_x_position(word_index, closest_x)
+                rel = RelativeCursor(0, 0, next_tok)
+                return rel
+        rel = RelativeCursor(closest_x, word_index, self)
+        return rel
+
+    def place_cursor_x(self, event_x: int) -> None:
+        rel = self.calculate_cursor_x(event_x)
+        rel.token.place_cursor_at_word_index_and_x_position(rel.word_index, rel.x)
 
     def move_left(self) -> None:
         if self._cursor_word_index == 0:
@@ -244,7 +286,7 @@ class Tok(AbstractToken):
             prev_tok.move_left()
             return
         x: int = 0 if self._cursor_word_index == 1 else self._font.measure(self._word[0:self._cursor_word_index - 1])
-        self._place_cursor_at_word_index_and_x_position(self._cursor_word_index - 1, x)
+        self.place_cursor_at_word_index_and_x_position(self._cursor_word_index - 1, x)
 
     def move_right(self) -> None:
         if self._cursor_word_index == len(self._word) - 1:
@@ -253,12 +295,12 @@ class Tok(AbstractToken):
                 return
             if not isinstance(next_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
             next_tok: Tok = next_entity
-            next_tok._place_cursor_at_word_index_and_x_position(0, 0)
+            next_tok.place_cursor_at_word_index_and_x_position(0, 0)
             return
         x = self._font.measure(self._word[0:self._cursor_word_index + 1])
         if self._cursor_word_index == len(self._word):
             x -= 2
-        self._place_cursor_at_word_index_and_x_position(self._cursor_word_index + 1, x)
+        self.place_cursor_at_word_index_and_x_position(self._cursor_word_index + 1, x)
 
     def move_up(self) -> None:
         abs_cursor_x = self._canvas.winfo_rootx() + self._cursor_pos.x
@@ -363,7 +405,7 @@ class Tok(AbstractToken):
         return []
 
     @override
-    def can_have_children(self) -> bool:
+    def is_container(self) -> bool:
         return False
 
     @override
@@ -374,18 +416,32 @@ class Tok(AbstractToken):
     def word(self) -> str:
         return self._word
 
+    @override
     @property
     def x(self) -> int:
         return self._canvas.winfo_x()
 
+    @override
     @property
     def y(self) -> int:
         return self._canvas.winfo_y()
 
+    @override
+    @property
+    def root_x(self) -> int:
+        return self._canvas.winfo_rootx()
+
+    @override
+    @property
+    def root_y(self) -> int:
+        return self._canvas.winfo_rooty()
+
+    @override
     @property
     def width(self) -> int:
         return self._canvas.winfo_width()
 
+    @override
     @property
     def height(self) -> int:
         return self._canvas.winfo_height()

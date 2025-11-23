@@ -1,11 +1,20 @@
 [MASTER]
-disable=
-    C0114, # missing-module-docstring
-    C0116, # missing-function-docstring
-    C0321, # More than one statement on a single line (multiple-statements)
-    R0903, # too-few-public-methods
-    W0246, # useless-parent-delegation
-    R0902, # too-many-instance-attributes
+disable =
+    C0114,  # missing-module-docstring
+    C0116,  # missing-function-docstring
+    C0321,  # More than one statement on a single line (multiple-statements)
+    R0903,  # too-few-public-methods
+    W0246,  # useless-parent-delegation
+    R0902,  # too-many-instance-attributes
+    R0901,  # too-many-ancestors
+    R0904,  # too-many-public-methods
+    R0911,  # too-many-return-statements
+
+[DESIGN]
+max-branches = 20
+max-arguments = 8
+max-positional-arguments = 8
+max-nested-blocks = 7
 
 [FORMAT]
-max-line-length=120
+max-line-length = 120

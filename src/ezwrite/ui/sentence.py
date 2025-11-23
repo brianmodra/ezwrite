@@ -44,12 +44,6 @@ class Sentence(TokenContainer):
         self._editor: EzEditor | None = None
         paragraph.add_child_entity(self)
 
-    @override
-    def zap(self) -> None:
-        for child in self.child_entities:
-            child.zap()
-        super().zap()
-
     @property
     @override
     def editor(self) -> EzEditor:
@@ -59,13 +53,16 @@ class Sentence(TokenContainer):
         self._editor = chapter_editor.get_sentence_editor()
         return self._editor
 
+    @override
+    def is_container(self) -> bool:
+        return True
 
-    def inside(self, widget: tk.Misc) -> Entity | None:
+    def widget_inside(self, widget: tk.Misc) -> Entity | None:
         for child in self.child_entities:
             if not isinstance(child, Tok):
                 continue
             token: Tok = child
-            entity: Entity | None = token.inside(widget)
+            entity: Entity | None = token.widget_inside(widget)
             if entity is not None:
                 return entity
         return None
@@ -139,3 +136,59 @@ class Sentence(TokenContainer):
                 continue
             tok: Tok = child
             Tok(self, tok.word, tok.font)
+
+    @override
+    def deselect_all(self) -> None:
+        for child in self.child_entities:
+            if not isinstance(child, Tok):
+                continue
+            tok: Tok = child
+            tok.deselect()
+
+    @override
+    @property
+    def x(self) -> int:
+        first = self.first_child()
+        if first is None:
+            return self.parent.x
+        return first.x
+
+    @override
+    @property
+    def y(self) -> int:
+        first = self.first_child()
+        if first is None:
+            return self.parent.y
+        return first.y
+
+    @override
+    @property
+    def root_x(self) -> int:
+        first = self.first_child()
+        if first is None:
+            return self.parent.root_x
+        return first.root_x
+
+    @override
+    @property
+    def root_y(self) -> int:
+        first = self.first_child()
+        if first is None:
+            return self.parent.root_y
+        return first.root_y
+
+    @override
+    @property
+    def width(self) -> int:
+        last = self.last_child()
+        if last is None:
+            return 0
+        return last.x + last.width - self.x - 1
+
+    @override
+    @property
+    def height(self) -> int:
+        last = self.last_child()
+        if last is None:
+            return 0
+        return last.y + last.height - self.y - 1

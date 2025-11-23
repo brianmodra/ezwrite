@@ -1,7 +1,17 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import List, Optional
 
 from rdflib.resource import Resource
+
+
+@dataclass
+class TraversalResult:
+    """This class is just a tidier form than a tuple, for handling results of a traversal"""
+    count: int
+    ent_first: "Entity | None"
+    ent_last: "Entity | None"
 
 
 class Entity(Resource, ABC):
@@ -70,5 +80,39 @@ class Entity(Resource, ABC):
     def cleanup_empty_containers(self) -> int:
         pass
 
-    def can_have_children(self) -> bool:
-        return True
+    @abstractmethod
+    def is_container(self) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def x(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
+    def y(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
+    def root_x(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
+    def root_y(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
+    def width(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
+    def height(self) -> int:
+        pass
+
+    def inside(self, root_x, root_y) -> int:
+        return self.root_x <= root_x < self.root_x + self.width and self.root_y <= root_y < self.root_y + self.height
