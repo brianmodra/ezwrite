@@ -1,12 +1,11 @@
 from abc import ABC
-from argparse import ArgumentTypeError
 from collections.abc import Callable
 from typing import Optional, override
 
 from rdflib.graph import Graph
 from rdflib.term import URIRef
 
-from ezwrite.graph.entity import Entity, TraversalResult
+from ezwrite.graph.entity import Entity
 from ezwrite.graph.ezproperty import EzProperty
 from ezwrite.graph.property_list import PropertyList
 
@@ -131,6 +130,7 @@ class EzEntity(Entity, ABC):
 
     @override
     def remove_child_entity(self, child: Entity) -> bool:
+        self.mark_dirty()
         return self._property_list.remove(EzProperty.HAS_PART, child)
 
     @property
@@ -140,13 +140,14 @@ class EzEntity(Entity, ABC):
 
     @override
     def cleanup_empty_containers(self) -> int:
+        if not self.is_container():
+            return 0
         count = 0
         for child in self.child_entities:
-            if not child.is_container():
-                continue
             count += child.cleanup_empty_containers()
-            if not child.has_children:
-                self.zap()
+        if not self.has_children:
+            self.zap()
+            count += 1
         return count
 
 
@@ -164,8 +165,7 @@ class EntityTraversal():
         self.ent_last: Entity | None = None
         self.callback = callback
 
-    def traverse_leaf_entities_between(self, container: Entity) -> int:
-        count: int = 0
+    def traverse_leaf_entities_between(self, container: Entity) -> bool:
         ending_with: Entity | None = None
         start_adding = False
         if self.ent2 is None:
@@ -173,34 +173,39 @@ class EntityTraversal():
             start_adding = True
         child = container.first_child()
         if child is None:
-            return count
+            return False
+        found: bool = False
         if not child.is_container():
             for child in container.child_entities:
                 if ending_with == child:
                     self.ent_last = child
-                    return count
+                    return True
                 if ending_with is None:
                     if child == self.ent1:
                         self.ent_first = self.ent1
                         ending_with = self.ent2
                         start_adding = True
+                        found = True
                     elif child == self.ent2:
                         self.ent_first = self.ent2
                         ending_with = self.ent1
                         start_adding = True
+                        found = True
                 elif start_adding:
                     self.callback(child)
-                    count += 1
                     self.count += 1
-            return count
+                    found = True
+            return found
         for child in container.child_entities:
-            processed_count = self.traverse_leaf_entities_between(child)
+            found_in_child = self.traverse_leaf_entities_between(child)
+            if found_in_child:
+                found = True
             if self.ent_last is not None:
-                return count + processed_count
-            if processed_count > 0 and self.ent2 is not None:
+                return True
+            if found_in_child > 0 and self.ent2 is not None:
                 if self.ent_first == self.ent1:
                     self.ent1 = self.ent2
                     self.ent2 = None
                 elif self.ent_first == self.ent2:
                     self.ent2 = None
-        return count
+        return found

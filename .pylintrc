@@ -12,7 +12,6 @@ disable =
 
 [DESIGN]
 max-branches = 20
-max-arguments = 8
 max-positional-arguments = 8
 max-nested-blocks = 7
 

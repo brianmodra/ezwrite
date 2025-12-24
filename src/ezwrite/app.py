@@ -5,7 +5,6 @@ from rdflib.graph import Graph
 
 from ezwrite.ui.chapter import Chapter
 from ezwrite.ui.paragraph import Paragraph
-from ezwrite.ui.position import Position
 from ezwrite.ui.sentence import Sentence
 from ezwrite.ui.tok import Tok
 

@@ -94,31 +94,27 @@ class Paragraph(SentenceContainer):
                 if not isinstance(child, Tok):
                     continue
                 tok: Tok = child
-                tok_x1 = tok.root_x
-                tok_y1 = tok.root_y
-                tok_x2 = tok_x1 + tok.width - 1
-                tok_y2 = tok_y1 + tok.height - 1
-                if tok_x1 <= x <= tok_x2 and tok_y1 <= y <= tok_y2:
+                if tok.inside(x, y):
                     return tok
         # not within, then find the closest token at the start or end of the paragraph.
         ent: Entity | None = self.first_child()
         if ent is not None:
             ent = ent.first_child()
             if ent is not None and isinstance(ent, Tok):
-                token: Tok = ent
-                if y < token.root_y:
-                    return token
-                if y < token.root_y + token.height and x < token.root_x:
-                    return token
+                tok = ent
+                if y < tok.root_y:
+                    return tok
+                if y < tok.root_y + tok.height and x < tok.root_x:
+                    return tok
         ent = self.last_child()
         if ent is not None:
             ent = ent.last_child()
             if ent is not None and isinstance(ent, Tok):
-                token = ent
-                if y < token.root_y:
+                tok = ent
+                if y < tok.root_y:
                     return None
-                if x >= token.root_x + token.width or y >= token.root_y + token.height:
-                    return token
+                if x >= tok.root_x + tok.width or y >= tok.root_y + tok.height:
+                    return tok
         return None
 
     @property
@@ -140,7 +136,7 @@ class Paragraph(SentenceContainer):
         for sentence in self.child_entities:
             if not isinstance(sentence, Sentence): raise ArgumentTypeError("sentence must be an instance of Sentence")
             container: Sentence = sentence
-            frame_height = container.layout(pos, canvas_width)
+            frame_height = max(frame_height, container.layout(pos, canvas_width))
         self._frame.place(x=0, y=frame_y_offset, height=frame_height, width=canvas_width)
         return frame_height
 

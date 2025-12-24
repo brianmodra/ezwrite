@@ -20,3 +20,6 @@ class EzEditor(ABC):
     @abstractmethod
     def get_paragraph_editor(self) -> "EzEditor":
         pass
+
+    def delete_selected(self, ent: Entity) -> bool: # pylint: disable=unused-argument
+        return False

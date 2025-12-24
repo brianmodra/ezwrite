@@ -39,7 +39,36 @@ class TokenEditor(EzEditor):
             return self._delete_character_mid_word(tok)
         new_word = tok.word[:tok.cursor_word_index - 1]
         tok.change_word(new_word)
+        tok.move_left()
         return True
+
+    @override
+    def delete_selected(self, ent: Entity) -> bool:
+        if not isinstance(ent, Tok):
+            raise InvalidArgsError("ent needs to be a Tok")
+        tok: Tok = ent
+        selection_start = tok.selection_start
+        selection_end = tok.selection_end
+        word_len = len(tok.word)
+        if selection_start == 0 and selection_end >= word_len:
+            tok.zap()
+            return True
+        if selection_start > 0:
+            if selection_end <= word_len:
+                new_word = tok.word[:selection_start] + tok.word[selection_end:]
+            else:
+                new_word = tok.word[:selection_start]
+            tok.change_word(new_word)
+            tok.place_cursor_at_word_index(selection_start)
+            tok.deselect()
+            return True
+        if selection_end <= word_len:
+            new_word = tok.word[selection_end:]
+            tok.change_word(new_word)
+            tok.place_cursor_at_word_index(0)
+            tok.deselect()
+            return True
+        return False
 
     def _delete_char_left_of_word(self, tok: Tok) -> bool:
         prev_tok = self._get_prev_token(tok)
@@ -85,7 +114,6 @@ class TokenEditor(EzEditor):
                             nxt_sen: Sentence = child
                             prev_sentence.append_copy_tokens_from(nxt_sen)
                         next_sentence.parent.zap()
-                        prev_sentence.get_root_container().layout()
                         return True
                     if sentence not in (next_sentence, prev_sentence):
                         # Three different sentences in play here
@@ -96,7 +124,6 @@ class TokenEditor(EzEditor):
                         sentence.zap()
                     prev_sentence.append_copy_tokens_from(next_sentence)
                     next_sentence.zap()
-                    prev_sentence.get_root_container().layout()
                     return True
                 tok.zap()
                 tok = sentence.join_tokens(prev_tok, next_tok)
@@ -104,17 +131,18 @@ class TokenEditor(EzEditor):
                 tok.place_cursor_at_word_index(new_word_index)
                 prev_tok.zap()
                 next_tok.zap()
-                sentence.get_root_container().layout()
                 return True
             tok.zap()
             return True
         new_word = tok.word[1:]
         tok.change_word(new_word)
+        tok.move_left()
         return True
 
     def _delete_character_mid_word(self, tok: Tok) -> bool:
         new_word = tok.word[:tok.cursor_word_index - 1] + tok.word[tok.cursor_word_index:]
         tok.change_word(new_word)
+        tok.move_left()
         return True
 
     def _get_prev_token(self, tok: Tok) -> Optional[Tok]:

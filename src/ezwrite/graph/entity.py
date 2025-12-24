@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -114,5 +113,9 @@ class Entity(Resource, ABC):
     def height(self) -> int:
         pass
 
-    def inside(self, root_x, root_y) -> int:
-        return self.root_x <= root_x < self.root_x + self.width and self.root_y <= root_y < self.root_y + self.height
+    def inside(self, root_x, root_y) -> bool:
+        xmin = self.root_x
+        ymin = self.root_y
+        xmax = self.root_x + self.width
+        ymax = self.root_y + self.height
+        return xmin <= root_x < xmax and ymin <= root_y < ymax

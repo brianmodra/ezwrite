@@ -79,11 +79,27 @@ class EzwriteContainer(EzEntity, EditableEntity, ABC):
     def deselect_all(self) -> None:
         pass
 
+    def get_selected(self) -> List["Tok"]:
+        selected: List["Tok"] = []
+        for child in self.child_entities:
+            if isinstance(child, Tok):
+                tok: Tok = child
+                selected.extend(tok.get_selected())
+                continue
+            if not isinstance(child, EzwriteContainer):
+                continue
+            container: EzwriteContainer = child
+            selected.extend(container.get_selected())
+        return selected
 
 class RootContainer(EzwriteContainer, ABC):
     """Generic class of the container of other containers - the root of a document"""
     @abstractmethod
     def layout(self) -> None:
+        pass
+
+    @abstractmethod
+    def set_layout_needed(self) -> None:
         pass
 
 
@@ -150,6 +166,8 @@ class Tok(AbstractToken):
             fill="white",
             width=2)
         self._highlight_id: int | None = None
+        self._start_select = 0
+        self._end_select = 0
         self._text_id = self._canvas.create_text(0, 0,
                          text=word,
                          fill="black",
@@ -167,12 +185,13 @@ class Tok(AbstractToken):
         self._cursor_pos.x = -1
         self._canvas.destroy()
         super().zap()
+        self.get_root_container().set_layout_needed()
 
     def change_word(self, new_word: str):
         self._word = new_word
+        self.resize()
         self._canvas.itemconfig(self._text_id, text=new_word)
-        self.get_root_container().layout()
-        self.move_left()
+        self.mark_dirty()
 
     def widget_inside(self, widget: tk.Misc) -> Entity | None:
         if self._canvas == widget:
@@ -217,6 +236,8 @@ class Tok(AbstractToken):
             fill="turquoise", outline=""
         )
         self._canvas.tag_lower(self._highlight_id, self._cursor_id)
+        self._start_select = start_word_index
+        self._end_select = end_word_index
 
     def deselect(self) -> bool:
         if self._highlight_id is None:
@@ -224,6 +245,11 @@ class Tok(AbstractToken):
         self._canvas.delete(self._highlight_id)
         self._highlight_id = None
         return True
+
+    def get_selected(self) -> List["Tok"]:
+        if self._highlight_id is not None:
+            return [self]
+        return []
 
     def get_x_pos_of_word_index(self, word_index) -> Tuple[int, int]:
         max_len = len(self._word)
@@ -275,34 +301,34 @@ class Tok(AbstractToken):
         rel = self.calculate_cursor_x(event_x)
         rel.token.place_cursor_at_word_index_and_x_position(rel.word_index, rel.x)
 
-    def move_left(self) -> None:
+    def move_left(self) -> Optional["Tok"]:
         if self._cursor_word_index == 0:
             prev_entity = self.previous_peer()
             if prev_entity is None:
-                return
+                return None
             if not isinstance(prev_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
             prev_tok: Tok = prev_entity
             prev_tok.set_cursor_word_index(len(prev_tok.word))
-            prev_tok.move_left()
-            return
+            return prev_tok.move_left()
         x: int = 0 if self._cursor_word_index == 1 else self._font.measure(self._word[0:self._cursor_word_index - 1])
         self.place_cursor_at_word_index_and_x_position(self._cursor_word_index - 1, x)
+        return self
 
-    def move_right(self) -> None:
+    def move_right(self) -> Optional["Tok"]:
         if self._cursor_word_index == len(self._word) - 1:
             next_entity = self.next_peer()
             if next_entity is None:
-                return
+                return None
             if not isinstance(next_entity, Tok): raise ArgumentTypeError("a peer of a Tok must be a Tok")
             next_tok: Tok = next_entity
-            next_tok.place_cursor_at_word_index_and_x_position(0, 0)
-            return
+            return next_tok.place_cursor_at_word_index_and_x_position(0, 0)
         x = self._font.measure(self._word[0:self._cursor_word_index + 1])
         if self._cursor_word_index == len(self._word):
             x -= 2
         self.place_cursor_at_word_index_and_x_position(self._cursor_word_index + 1, x)
+        return self
 
-    def move_up(self) -> None:
+    def move_up(self) -> Optional["Tok"]:
         abs_cursor_x = self._canvas.winfo_rootx() + self._cursor_pos.x
         abs_cursor_y = self._canvas.winfo_rooty() + self._cursor_pos.y
         closest: Tok | None = None
@@ -322,10 +348,11 @@ class Tok(AbstractToken):
                     break
             ent = ent.previous_peer()
         if closest is None:
-            return
+            return None
         closest.place_cursor_x(abs_cursor_x - closest.canvas.winfo_rootx())
+        return closest
 
-    def move_down(self) -> None:
+    def move_down(self) -> Optional["Tok"]:
         abs_cursor_x = self._canvas.winfo_rootx() + self._cursor_pos.x
         abs_cursor_y = self._canvas.winfo_rooty() + self._cursor_pos.y + self._cursor_height
         closest: Tok | None = None
@@ -345,8 +372,16 @@ class Tok(AbstractToken):
                     break
             ent = ent.next_peer()
         if closest is None:
-            return
+            return None
         closest.place_cursor_x(abs_cursor_x - closest.canvas.winfo_rootx())
+        return closest
+
+    def resize(self) -> None:
+        # for carriage return etc, need space to display the cursor, hence at least 2:
+        width = max(self._font.measure(self._word), 2)
+        height = self._font.metrics()['linespace']
+        self._canvas.config(width=width, height=height) # probably unnecessary, but no harm done
+        #self._canvas.pack(padx=0, pady=0)
 
     def layout(self, pos: Position, frame_width: int) -> int:
         # for carriage return etc, need space to display the cursor, hence at least 2:
@@ -445,3 +480,11 @@ class Tok(AbstractToken):
     @property
     def height(self) -> int:
         return self._canvas.winfo_height()
+
+    @property
+    def selection_start(self) -> int:
+        return self._start_select
+
+    @property
+    def selection_end(self) -> int:
+        return self._end_select

@@ -25,6 +25,21 @@ class Key():
         self.released = False
         self.moved = False
 
+    def __eq__(self, other_obj: object) -> bool:
+        if not isinstance(other_obj, Key):
+            return False
+        other: Key = other_obj
+        return (
+            self.char == other.char and
+            self.keysym == other.keysym and
+            self.button_num == other.button_num and
+            self.widget == other.widget and
+            self.x1 == other.x1 and
+            self.y1 == other.y1 and
+            self.x2 == other.x2 and
+            self.y2 == other.y2
+        )
+
 
 class KeyHandler():
     """This key handler converts low level events into higher level to combine
@@ -73,6 +88,7 @@ class KeyHandler():
         else:
             return
         all_released: bool = True
+        handled: bool = False
         for key in self._keys:
             if keysym == key.keysym:
                 key.released = True
@@ -81,7 +97,6 @@ class KeyHandler():
             elif not key.released:
                 all_released = False
         if all_released:
-            handled: bool = False
             for handler in self._handlers:
                 if handler(event, self._keys):
                     handled = True
@@ -89,3 +104,11 @@ class KeyHandler():
             if not handled:
                 print("unhandled key sequence: " + ", ".join(map(lambda key: key.keysym, self._keys)))
             self._keys.clear()
+        elif len(self._keys) == 2 and self._keys[0].keysym in ["Shift_L", "Shift_R"]:
+            for handler in self._handlers:
+                if handler(event, self._keys):
+                    handled = True
+                    break
+            if not handled:
+                print("unhandled key sequence: " + ", ".join(map(lambda key: key.keysym, self._keys)))
+            self._keys.pop(1)

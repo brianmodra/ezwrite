@@ -1,6 +1,6 @@
 import tkinter as tk
 from argparse import ArgumentTypeError
-from typing import List, Optional, Tuple, override
+from typing import List, Optional, override
 
 from rdflib.graph import Graph
 from rdflib.term import URIRef
@@ -14,6 +14,15 @@ from ezwrite.ui.paragraph import Paragraph, ParagraphContainer
 from ezwrite.ui.tok import AbstractToken, RelativeCursor, Tok
 from ezwrite.utils.lock import Lock
 
+
+class MouseEventCache():
+    '''Used to keep track of mose events, and help with efficiency'''
+    def __init__(self, rel: RelativeCursor, key: Key):
+        self.rel = rel
+        self.key = key
+
+    def same_key(self, key: Key) -> bool:
+        return self.key == key
 
 class Chapter(ParagraphContainer):
     """The entire canvas of the editor is (at one point in time) a chapter of the book.
@@ -29,8 +38,12 @@ class Chapter(ParagraphContainer):
         self._canvas.pack(side="left", fill="both", expand=True)
         self._canvas.bind("<Configure>", self.on_resize)
         self._editor = ChapterEditor()
+        self._select_start: MouseEventCache | None = None
+        self._select_end: MouseEventCache | None = None
+        self._layout_needed = False
         key_handler = KeyHandler(self._canvas)
         key_handler.add_handler(self.handle_arrow_click)
+        key_handler.add_handler(self.handle_shift_arrow_click)
         key_handler.add_handler(self.handle_editing_keys)
         key_handler.add_handler(self.handle_typed_character)
         key_handler.add_handler(self.handle_mouse_button_1)
@@ -105,7 +118,7 @@ class Chapter(ParagraphContainer):
             return False
 
         key = keys[0]
-        if key.keysym != "<Button-1>" or not key.released:
+        if key.keysym != "<Button-1>":
             return False
 
         entity = self.widget_inside(key.widget)
@@ -113,15 +126,33 @@ class Chapter(ParagraphContainer):
             print(f"location outside: x={key.x1}, y={key.y1}")
             return False
 
-        rel_press = self._handle_press(entity, key)
-        if rel_press is None:
-            return False
+        self._select_end = None
+        rel_press: RelativeCursor
+
+        if self._select_start is not None and self._select_start.same_key(key):
+            rel_press = self._select_start.rel
+        else:
+            rel_pr = self._handle_press(entity, key)
+            if rel_pr is None:
+                self._select_start = None
+                return False
+            rel_press = rel_pr
+            self._select_start = MouseEventCache(rel_press, key)
 
         rel_release = self._handle_release(entity, key)
-        if rel_release is None or rel_press is None:
+        if rel_release is None:
+            if not key.released:
+                return False
+            rel_press.token.place_cursor_at_word_index_and_x_position(rel_press.word_index, rel_press.x)
             return True
 
-        self._apply_selection(rel_press, rel_release)
+        self._select_end = MouseEventCache(rel_release, key)
+        self._apply_selection()
+
+        if not key.released:
+            return False
+
+        rel_release.token.place_cursor_at_word_index_and_x_position(rel_release.word_index, rel_release.x)
         return True
 
     def _handle_press(self,
@@ -130,7 +161,7 @@ class Chapter(ParagraphContainer):
                       ) -> Optional[RelativeCursor]:
         """Return (token, relative_cursor, paragraph) or (None, None, None)."""
         tok: Tok
-        if isinstance(entity, Paragraph) or isinstance(entity, Chapter):
+        if isinstance(entity, (Chapter, Paragraph)):
             print(f"paragraph: x={key.x1}, y={key.y1}")
             ex = entity.root_x + key.x1
             ey = entity.root_y + key.y1
@@ -147,7 +178,6 @@ class Chapter(ParagraphContainer):
                 rel_press = tok.calculate_cursor_x(ex - tok.root_x)
         elif isinstance(entity, Tok):
             tok = entity
-            tok.place_cursor_x(key.x1)
             print(f"token: {tok.word} x={key.x1}, y={key.y1}")
             if tok.parent is None:
                 print("parent of Tok cannot be None")
@@ -161,7 +191,6 @@ class Chapter(ParagraphContainer):
             print("Could not find entity near press")
             return None
 
-        tok.place_cursor_at_word_index_and_x_position(rel_press.word_index, rel_press.x)
         return rel_press
 
     def _handle_release(self,
@@ -170,7 +199,7 @@ class Chapter(ParagraphContainer):
                         ) -> Optional[RelativeCursor]:
         """Return rel_release or None (meaning early exit but no error)."""
         tok_release: Tok
-        if isinstance(entity, Paragraph) or isinstance(entity, Chapter):
+        if isinstance(entity, (Chapter, Paragraph)):
             print(f"paragraph release: x={key.x2}, y={key.y2}")
             ex = entity.root_x + key.x2
             ey = entity.root_y + key.y2
@@ -202,29 +231,29 @@ class Chapter(ParagraphContainer):
         rel_x = ex - tok_release.canvas.winfo_rootx()
         return tok_release.calculate_cursor_x(rel_x)
 
-    def _apply_selection(self,
-                         rel_press: RelativeCursor,
-                         rel_release: RelativeCursor
-                         ) -> bool:
-        """Apply selection logic exactly as before."""
+    def _apply_selection(self) -> bool:
+        """Apply selection logic between _select_start and _select_end."""
         self.deselect_all()
 
-        if rel_release.token == rel_press.token:
-            if rel_release.word_index == rel_press.word_index:
+        if self._select_end is None or self._select_start is None:
+            return False
+
+        if self._select_end.rel.token == self._select_start.rel.token:
+            if self._select_end.rel.word_index == self._select_start.rel.word_index:
                 return True
-            if rel_release.word_index < rel_press.word_index:
-                rel_press.token.select(rel_release.word_index, rel_press.word_index)
+            if self._select_end.rel.word_index < self._select_start.rel.word_index:
+                self._select_start.rel.token.select(self._select_end.rel.word_index, self._select_start.rel.word_index)
             else:
-                rel_press.token.select(rel_press.word_index, rel_release.word_index)
+                self._select_start.rel.token.select(self._select_start.rel.word_index, self._select_end.rel.word_index)
         else:
-            traversal = EntityTraversal(rel_press.token, rel_release.token, Chapter.select_token)
+            traversal = EntityTraversal(self._select_start.rel.token, self._select_end.rel.token, Chapter.select_token)
             traversal.traverse_leaf_entities_between(self)
-            if traversal.ent_first != rel_press.token:
-                rel_release.token.select(rel_release.word_index, -1)
-                rel_press.token.select(0, rel_press.word_index)
+            if traversal.ent_first != self._select_start.rel.token:
+                self._select_end.rel.token.select(self._select_end.rel.word_index, -1)
+                self._select_start.rel.token.select(0, self._select_start.rel.word_index)
             else:
-                rel_press.token.select(rel_press.word_index, -1)
-                rel_release.token.select(0, rel_release.word_index)
+                self._select_start.rel.token.select(self._select_start.rel.word_index, -1)
+                self._select_end.rel.token.select(0, self._select_end.rel.word_index)
 
         return True
 
@@ -240,14 +269,8 @@ class Chapter(ParagraphContainer):
                 tok: Tok = ent
                 if tok.inside(x, y):
                     return tok
-                tok_x1 = tok.root_x
-                tok_y1 = tok.root_y
-                tok_x2 = tok_x1 + tok.width - 1
-                tok_y2 = tok_y1 + tok.height - 1
-                xx = (tok_x1 + tok_x2) // 2
-                yy = (tok_y1 + tok_y2) // 2
-                dx = x - xx
-                dy = y - yy
+                dx = x - tok.root_x + tok.width // 2
+                dy = y - tok.root_y + tok.height // 2
                 dd = dx * dx + dy * dy
                 # if it is closer than the last one
                 if closest is None or dd < closest_dd:
@@ -278,6 +301,37 @@ class Chapter(ParagraphContainer):
                 tok.move_down()
         return True
 
+    def handle_shift_arrow_click(self, event: tk.Event, keys: List[Key]) -> bool:
+        if not (len(keys) == 2 and keys[0].keysym in ["Shift_L", "Shift_R"]):
+            return False
+        key = keys[1]
+        keysym: str = key.keysym
+        if keysym not in ('Left', 'Right', 'Up', 'Down'):
+            return False
+        entity: Entity | None = self.widget_inside(event.widget)
+        if entity is None:
+            return False
+        if not isinstance(entity, Tok):
+            return False
+        tok: Tok = entity
+        moved_to: Tok | None
+        match keysym:
+            case "Left":
+                moved_to = tok.move_left()
+            case "Right":
+                moved_to = tok.move_right()
+            case "Up":
+                moved_to = tok.move_up()
+            case "Down":
+                moved_to = tok.move_down()
+        if moved_to is None:
+            return True
+
+        rel = RelativeCursor(moved_to.cursor_pos.x, moved_to.cursor_index, moved_to)
+        self._select_end = MouseEventCache(rel, key)
+        self._apply_selection()
+        return True
+
     def handle_editing_keys(self, event: tk.Event, keys: List[Key]) -> bool:
         entity: Entity | None = self.widget_inside(event.widget)
         if entity is None:
@@ -286,8 +340,16 @@ class Chapter(ParagraphContainer):
             return False
         tok: Tok = entity
         if len(keys) == 1 and keys[0].keysym == "BackSpace":
+            selected = self.get_selected()
+            if len(selected) > 0:
+                for tok in selected:
+                    tok.editor.delete_selected(tok)
+                self.cleanup_empty_containers()
+                self.layout_if_needed()
+                return True
             if tok.editor.delete_character_left(tok):
                 self.cleanup_empty_containers()
+                self.layout_if_needed()
                 return True
         return False
 
@@ -336,7 +398,9 @@ class Chapter(ParagraphContainer):
 
         self.layout()
 
+    @override
     def layout(self) -> None:
+        self._layout_needed = False
         with self._lock:
             if self._laying_out:
                 return
@@ -370,3 +434,16 @@ class Chapter(ParagraphContainer):
                 continue
             paragraph: Paragraph = child
             paragraph.deselect_all()
+
+    def layout_if_needed(self) -> None:
+        if self._layout_needed:
+            self.layout()
+
+    @override
+    def set_layout_needed(self) -> None:
+        self._layout_needed = True
+
+    def schedule_layout(self) -> None:
+        self._layout_needed = True
+        root = self._canvas.winfo_toplevel()
+        root.after(10, self.layout_if_needed)
